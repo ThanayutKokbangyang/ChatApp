@@ -7,16 +7,15 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Folder Include="Services\" />
-  </ItemGroup>
-
-  <ItemGroup>
     <PackageReference Include="Dapper" Version="2.1.79" />
     <PackageReference Include="Microsoft.Data.SqlClient" Version="7.0.1" />
+    <PackageReference Include="Microsoft.Extensions.Caching.Memory" Version="9.0.13" />
     <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" Version="10.0.8" />
+    <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.8" />
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\ChatApp.ChatService.Application\ChatApp.ChatService.Application.csproj" />
     <ProjectReference Include="..\ChatApp.ChatService.Domain\ChatApp.ChatService.Domain.csproj" />
   </ItemGroup>
 

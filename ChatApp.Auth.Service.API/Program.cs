@@ -4,10 +4,22 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
 
+// =====================================================================
+// Auth Service entry point (.NET 9 Minimal Hosting)
+// =====================================================================
 var builder = WebApplication.CreateBuilder(args);
 
+// =====================================================================
+// DESIGN PATTERN: Builder Pattern (DI configuration)
+// ---------------------------------------------------------------------
+// ใช้ extension method AddAuthInfrastructure() จัดการ DI ทั้งหมดในจุดเดียว
+// แทนที่จะ register ทีละบรรทัด ทำให้ Program.cs สั้นและอ่านง่าย
+// =====================================================================
 builder.Services.AddAuthInfrastructure();
 
+// =====================================================================
+// CORS — อนุญาตให้ Blazor WASM frontend เรียก API ผ่าน Nginx ได้
+// =====================================================================
 builder.Services.AddCors(options =>
 {
     options.AddDefaultPolicy(policy =>
@@ -19,6 +31,12 @@ builder.Services.AddCors(options =>
     });
 });
 
+// =====================================================================
+// JWT Bearer Authentication
+// ---------------------------------------------------------------------
+// validate JWT ทุก request ที่ติด [Authorize] หรือ .RequireAuthorization()
+// ใช้ secret key เดียวกันทั้ง AuthService และ ChatService
+// =====================================================================
 var jwtSecret = builder.Configuration["Jwt:Secret"]!;
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
@@ -44,6 +62,18 @@ builder.Services.AddSwaggerGen();
 
 var app = builder.Build();
 
+// =====================================================================
+// DESIGN PATTERN: Chain of Responsibility (Middleware Pipeline)
+// ---------------------------------------------------------------------
+// แต่ละ middleware ใน ASP.NET Core เป็น handler ใน chain
+// แต่ละตัวตัดสินใจได้ว่าจะ:
+//   - ทำงานก่อน (เช่น authentication)
+//   - ส่งต่อให้ตัวถัดไป (await _next(context))
+//   - ทำงานหลัง (เช่น logging)
+//   - short-circuit (เช่น return 401 ทันที)
+//
+// ลำดับสำคัญมาก! UseAuthentication ต้องอยู่ก่อน UseAuthorization
+// =====================================================================
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
@@ -51,8 +81,8 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseCors();
-app.UseAuthentication();
-app.UseAuthorization();
+app.UseAuthentication();   // ตรวจ token → set ClaimsPrincipal
+app.UseAuthorization();    // ตรวจ [Authorize] / RequireAuthorization
 
 app.MapAuthEndpoints();
 
