@@ -1,8 +1,8 @@
-﻿using ChatApp.AuthService.Domain.Exceptions;
-using ChatApp.ChatService.Application.DTOs;
+﻿using ChatApp.ChatService.Application.DTOs;
 using ChatApp.ChatService.Application.Interfaces;
 using ChatApp.ChatService.Application.Queries;
 using ChatApp.ChatService.Domain.Entities;
+using ChatApp.ChatService.Domain.Exceptions;
 using ChatApp.ChatService.Domain.Interfaces;
 using System;
 using System.Collections.Generic;

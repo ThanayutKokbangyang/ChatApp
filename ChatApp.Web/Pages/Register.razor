@@ -1,0 +1,83 @@
+﻿@page "/register"
+@layout MainLayout
+@inject AuthApiService AuthService
+@inject NavigationManager Navigation
+
+<PageTitle>สมัครสมาชิก</PageTitle>
+
+<div class="auth-card">
+    <h2>สมัครสมาชิก</h2>
+
+    @if (!string.IsNullOrEmpty(_error))
+    {
+        <div class="alert alert-error">@_error</div>
+    }
+
+    @if (_success)
+    {
+        <div class="alert alert-success">
+            สมัครสมาชิกสำเร็จ! กำลังไปยังหน้าเข้าสู่ระบบ...
+        </div>
+    }
+
+    <EditForm Model="@_model" OnValidSubmit="HandleRegister">
+        <DataAnnotationsValidator />
+
+        <div class="form-group">
+            <label>Email</label>
+            <InputText @bind-Value="_model.Email" class="form-control" />
+        </div>
+
+        <div class="form-group">
+            <label>Username</label>
+            <InputText @bind-Value="_model.Username" class="form-control" />
+        </div>
+
+        <div class="form-group">
+            <label>รหัสผ่าน (อย่างน้อย 6 ตัวอักษร)</label>
+            <InputText type="password" @bind-Value="_model.Password" class="form-control" />
+        </div>
+
+        <button type="submit" class="btn-primary" disabled="@_loading">
+            @(_loading ? "กำลังสมัคร..." : "สมัครสมาชิก")
+        </button>
+    </EditForm>
+
+    <p class="link-row">
+        มีบัญชีอยู่แล้ว? <a href="/login">เข้าสู่ระบบ</a>
+    </p>
+</div>
+
+@code {
+    private RegisterModel _model = new();
+    private string _error = string.Empty;
+    private bool _success;
+    private bool _loading;
+
+    private async Task HandleRegister()
+    {
+        _loading = true;
+        _error = string.Empty;
+
+        var ok = await AuthService.RegisterAsync(_model.Email, _model.Username, _model.Password);
+        _loading = false;
+
+        if (ok)
+        {
+            _success = true;
+            await Task.Delay(1500);
+            Navigation.NavigateTo("/login");
+        }
+        else
+        {
+            _error = "ไม่สามารถสมัครได้ — อาจเพราะ email ซ้ำ";
+        }
+    }
+
+    public class RegisterModel
+    {
+        public string Email { get; set; } = string.Empty;
+        public string Username { get; set; } = string.Empty;
+        public string Password { get; set; } = string.Empty;
+    }
+}

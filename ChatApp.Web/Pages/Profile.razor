@@ -1,0 +1,115 @@
+﻿@page "/profile"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@inject ChatApiService ChatService
+
+<PageTitle>โปรไฟล์</PageTitle>
+
+<div class="profile-page">
+    <h2>โปรไฟล์ของฉัน</h2>
+
+    <div class="avatar-section">
+        @if (!string.IsNullOrEmpty(_avatarUrl))
+        {
+            <img src="@GetAvatarUrl(_avatarUrl)" alt="avatar" class="avatar-large" />
+        }
+        else
+        {
+            <div class="avatar-placeholder-large">?</div>
+        }
+    </div>
+
+    <div class="upload-section">
+        <label class="btn-primary upload-button">
+            เลือกรูปโปรไฟล์
+            <InputFile OnChange="HandleFileSelected" accept="image/*" class="hidden-file-input" />
+        </label>
+
+        @if (_uploading)
+        {
+            <p>กำลังอัพโหลด...</p>
+        }
+
+        @if (!string.IsNullOrEmpty(_message))
+        {
+            <div class="alert alert-success">@_message</div>
+        }
+
+        @if (!string.IsNullOrEmpty(_error))
+        {
+            <div class="alert alert-error">@_error</div>
+        }
+    </div>
+</div>
+
+@code {
+    private string? _avatarUrl;
+    private bool _uploading;
+    private string _message = string.Empty;
+    private string _error = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var profile = await ChatService.GetMyProfileAsync();
+            _avatarUrl = profile?.AvatarUrl;
+        }
+        catch (Exception ex)
+        {
+            _error = $"โหลดโปรไฟล์ไม่สำเร็จ: {ex.Message}";
+        }
+    }
+
+    private async Task HandleFileSelected(InputFileChangeEventArgs e)
+    {
+        _error = string.Empty;
+        _message = string.Empty;
+
+        var file = e.File;
+
+        if (file.Size > 5 * 1024 * 1024)
+        {
+            _error = "ไฟล์ต้องมีขนาดไม่เกิน 5 MB";
+            return;
+        }
+
+        _uploading = true;
+
+        try
+        {
+            using var stream = file.OpenReadStream(maxAllowedSize: 5 * 1024 * 1024);
+            var url = await ChatService.UploadAvatarAsync(stream, file.Name);
+
+            if (!string.IsNullOrEmpty(url))
+            {
+                _avatarUrl = url;
+                _message = "อัพโหลดสำเร็จ!";
+            }
+            else
+            {
+                _error = "อัพโหลดไม่สำเร็จ";
+            }
+        }
+        catch (Exception ex)
+        {
+            _error = $"เกิดข้อผิดพลาด: {ex.Message}";
+        }
+        finally
+        {
+            _uploading = false;
+        }
+    }
+
+    private static string GetAvatarUrl(string? avatarUrl)
+    {
+        if (string.IsNullOrWhiteSpace(avatarUrl))
+            return string.Empty;
+
+        if (avatarUrl.StartsWith("http", StringComparison.OrdinalIgnoreCase))
+            return avatarUrl;
+
+        return avatarUrl.StartsWith("/")
+            ? $"/chat{avatarUrl}"
+            : $"/chat/{avatarUrl}";
+    }
+}

@@ -29,7 +29,7 @@ namespace ChatApp.ChatService.Infrastructure.Services
             return Task.FromResult<T?>(null);
         }  
 
-        public Task setAsync<T>(string key, T value, TimeSpan? expiration = null) where T : class
+        public Task SetAsync<T>(string key, T value, TimeSpan? expiration = null) where T : class
         {
             var json = JsonSerializer.Serialize(value);
             _cache.Set(key, json, expiration ?? DefaultExpiration);
@@ -41,5 +41,6 @@ namespace ChatApp.ChatService.Infrastructure.Services
             _cache.Remove(key);
             return Task.CompletedTask;
         }
+
     }
 }

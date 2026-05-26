@@ -1,6 +1,7 @@
 ﻿using ChatApp.ChatService.Application.Interfaces;
 using ChatApp.ChatService.Application.Queries;
 using ChatApp.ChatService.Domain.Exceptions;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
@@ -8,6 +9,7 @@ using static ChatApp.ChatService.Application.Commands.ChatCommands;
 
 namespace ChatApp.ChatService.API.Hubs
 {
+    [Authorize]
     public class ChatHub : Hub
     {
         private readonly IChatService _chatService;
@@ -17,26 +19,27 @@ namespace ChatApp.ChatService.API.Hubs
             _chatService = chatService;
         }
 
-        public override async Task onConnectedAsync()
+        public override async Task OnConnectedAsync()
         {
             var userId = GetUserId();
             var username = GetUsername();
 
             await _chatService.UpsertChatUserAsync(userId, username);
-            await base.OnConnectedAsync();
 
-        }    
+            await base.OnConnectedAsync();
+        }
 
         public async Task JoinRoom(string roomId)
         {
+            var userId = GetUserId();
+
             await Groups.AddToGroupAsync(Context.ConnectionId, roomId);
 
             var history = await _chatService.GetRoomHistoryAsync(
                 new GetRoomHistoryQuery(Guid.Parse(roomId), 1, 50));
+
             await Clients.Caller.SendAsync("ReceiveHistory", history);
-
             await Clients.OthersInGroup(roomId).SendAsync("UserJoined", GetUsername());
-
         }
 
         public async Task LeaveRoom(string roomId)
@@ -49,7 +52,10 @@ namespace ChatApp.ChatService.API.Hubs
         {
             try
             {
-                var command = new SendMessageCommand(Guid.Parse(roomId), GetUserId(), content);
+                var command = new SendMessageCommand(
+                    Guid.Parse(roomId),
+                    GetUserId(),
+                    content);
 
                 var message = await _chatService.SendMessageAsync(command);
 
@@ -57,27 +63,50 @@ namespace ChatApp.ChatService.API.Hubs
             }
             catch (DomainException ex)
             {
-                await Clients.Caller.SendAsync("Error", ex.Message);
+                await Clients.Caller.SendAsync("ErrorOccurred", ex.Message);
+            }
+            catch (Exception ex)
+            {
+                await Clients.Caller.SendAsync("ErrorOccurred", ex.Message);
             }
         }
 
         public async Task SendTyping(string roomId, bool isTyping)
         {
-            await Clients.OthersInGroup(roomId).SendAsync("UserTyping", new
-            {
-                Username = GetUsername(),
-                IsTyping = isTyping
-            });
+            await Clients.OthersInGroup(roomId)
+                .SendAsync("UserTyping", GetUsername(), isTyping);
         }
 
         private Guid GetUserId()
         {
-            var sub = Context.User?.FindFirstValue(JwtRegisteredClaimNames.Sub) ?? throw new HubException("User identity not found");
-            return Guid.Parse(sub);
+            var userId =
+                Context.User?.FindFirstValue(JwtRegisteredClaimNames.Sub) ??
+                Context.User?.FindFirstValue(ClaimTypes.NameIdentifier) ??
+                Context.User?.FindFirstValue("sub") ??
+                Context.User?.FindFirstValue("nameid") ??
+                Context.User?.FindFirstValue("userId");
+
+            if (string.IsNullOrWhiteSpace(userId))
+            {
+                throw new HubException("User identity not found");
+            }
+
+            if (!Guid.TryParse(userId, out var parsedUserId))
+            {
+                throw new HubException($"Invalid user id claim: {userId}");
+            }
+
+            return parsedUserId;
         }
+
         private string GetUsername()
         {
-            return Context.User?.FindFirstValue(ClaimTypes.Name) ?? Context.User?.Identity?.Name ?? "Unknown";
+            return
+                Context.User?.FindFirstValue(ClaimTypes.Name) ??
+                Context.User?.FindFirstValue(JwtRegisteredClaimNames.Name) ??
+                Context.User?.FindFirstValue("username") ??
+                Context.User?.Identity?.Name ??
+                "Unknown";
         }
     }
 }

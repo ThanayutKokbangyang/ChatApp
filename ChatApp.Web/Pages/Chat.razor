@@ -1,0 +1,320 @@
+﻿@page "/chat/{RoomId:guid}"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@inject ChatApiService ChatService
+@inject NavigationManager Navigation
+@inject AuthenticationStateProvider AuthStateProvider
+@implements IAsyncDisposable
+
+<PageTitle>แชท</PageTitle>
+
+<div class="chat-page">
+    <header class="chat-header">
+        <button class="btn-back" @onclick="GoBack">← กลับ</button>
+        <h3>ห้องแชท</h3>
+        <span class="connection-status @(_connected ? "online" : "offline")">
+            @(_connected ? "● เชื่อมต่อแล้ว" : "○ กำลังเชื่อมต่อ")
+        </span>
+    </header>
+
+    <div class="messages" @ref="_messagesContainer">
+        @foreach (var msg in _messages)
+        {
+            var isMine = IsMyMessage(msg);
+
+            <div class="message-item @(isMine ? "mine" : "other")">
+                @if (!isMine)
+                {
+                    <div class="avatar">
+                        @if (!string.IsNullOrEmpty(msg.SenderAvatarUrl))
+                        {
+                            <img src="@GetAvatarUrl(msg.SenderAvatarUrl)" alt="@msg.SenderUsername" />
+                        }
+                        else
+                        {
+                            <div class="avatar-placeholder">
+                                @GetInitial(msg.SenderUsername)
+                            </div>
+                        }
+                    </div>
+                }
+
+                <div class="message-content">
+                    <div class="message-meta">
+                        <strong>@(isMine ? "คุณ" : msg.SenderUsername)</strong>
+                        <small>@msg.SentAt.ToLocalTime().ToString("HH:mm")</small>
+                    </div>
+
+                    <div class="message-text">
+                        @msg.Content
+                    </div>
+                </div>
+
+                @if (isMine)
+                {
+                    <div class="avatar">
+                        @if (!string.IsNullOrEmpty(msg.SenderAvatarUrl))
+                        {
+                            <img src="@GetAvatarUrl(msg.SenderAvatarUrl)" alt="@msg.SenderUsername" />
+                        }
+                        else
+                        {
+                            <div class="avatar-placeholder mine-placeholder">
+                                @GetInitial(msg.SenderUsername)
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+        }
+    </div>
+
+    @if (!string.IsNullOrEmpty(_typingText))
+    {
+        <div class="typing-indicator">
+            @_typingText
+        </div>
+    }
+
+    @if (!string.IsNullOrEmpty(_error))
+    {
+        <div class="alert alert-error">@_error</div>
+    }
+
+    <div class="message-input">
+        <input value="@_newMessage"
+               @oninput="HandleMessageInput"
+               @onkeydown="HandleKeyPress"
+               placeholder="พิมพ์ข้อความ..."
+               class="form-control"
+               disabled="@(!_connected)" />
+
+        <button class="btn-primary"
+                @onclick="SendMessage"
+                disabled="@(!_connected || string.IsNullOrWhiteSpace(_newMessage))">
+            ส่ง
+        </button>
+    </div>
+</div>
+
+@code {
+    [Parameter] public Guid RoomId { get; set; }
+
+    private List<MessageDto> _messages = new();
+    private string _newMessage = string.Empty;
+    private string _error = string.Empty;
+    private bool _connected;
+    private ElementReference _messagesContainer;
+
+    private Guid? _currentUserId;
+    private string? _currentUsername;
+
+    private string _typingText = string.Empty;
+    private CancellationTokenSource? _typingCts;
+    private DateTime _lastTypingSentAt = DateTime.MinValue;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadCurrentUserAsync();
+
+        ChatService.MessageReceived += OnMessageReceived;
+        ChatService.HistoryReceived += OnHistoryReceived;
+        ChatService.UserJoined += OnUserJoined;
+        ChatService.UserLeft += OnUserLeft;
+        ChatService.ErrorOccurred += OnError;
+        ChatService.UserTyping += OnUserTyping;
+        ChatService.AvatarUpdated += OnAvatarUpdated;
+
+        var hubUrl = $"{Navigation.BaseUri.TrimEnd('/')}/chat/hubs/chat";
+
+        await ChatService.StartAsync(hubUrl);
+        _connected = ChatService.IsConnected;
+
+        await ChatService.JoinRoomAsync(RoomId);
+    }
+
+    private async Task LoadCurrentUserAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+
+        _currentUsername =
+            user.Identity?.Name ??
+            user.FindFirst(System.Security.Claims.ClaimTypes.Name)?.Value ??
+            user.FindFirst("name")?.Value ??
+            user.FindFirst("username")?.Value;
+
+        var userId =
+            user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ??
+            user.FindFirst(System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.Sub)?.Value ??
+            user.FindFirst("sub")?.Value ??
+            user.FindFirst("nameid")?.Value ??
+            user.FindFirst("userId")?.Value ??
+            user.FindFirst("uid")?.Value;
+
+        if (Guid.TryParse(userId, out var parsedUserId))
+        {
+            _currentUserId = parsedUserId;
+        }
+    }
+
+    private bool IsMyMessage(MessageDto message)
+    {
+        if (_currentUserId.HasValue && message.SenderId == _currentUserId.Value)
+            return true;
+
+        if (!string.IsNullOrWhiteSpace(_currentUsername) &&
+            string.Equals(message.SenderUsername, _currentUsername, StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        return false;
+    }
+
+    private static string GetAvatarUrl(string? avatarUrl)
+    {
+        if (string.IsNullOrWhiteSpace(avatarUrl))
+            return string.Empty;
+
+        var separator = avatarUrl.Contains('?') ? "&" : "?";
+        var versionedAvatarUrl = $"{avatarUrl}{separator}v={DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}";
+
+        if (versionedAvatarUrl.StartsWith("http", StringComparison.OrdinalIgnoreCase))
+            return versionedAvatarUrl;
+
+        return versionedAvatarUrl.StartsWith("/")
+            ? $"/chat{versionedAvatarUrl}"
+            : $"/chat/{versionedAvatarUrl}";
+    }
+
+    private static string GetInitial(string? username)
+    {
+        if (string.IsNullOrWhiteSpace(username))
+            return "?";
+
+        return username[0].ToString().ToUpper();
+    }
+
+    private void OnMessageReceived(MessageDto message)
+    {
+        _messages.Add(message);
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void OnHistoryReceived(IEnumerable<MessageDto> history)
+    {
+        _messages = history.ToList();
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void OnUserJoined(string username)
+    {
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void OnUserLeft(string username)
+    {
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void OnError(string error)
+    {
+        _error = error;
+        InvokeAsync(StateHasChanged);
+    }
+
+    private async Task HandleMessageInput(ChangeEventArgs e)
+    {
+        _newMessage = e.Value?.ToString() ?? string.Empty;
+
+        if (!_connected)
+            return;
+
+        var now = DateTime.UtcNow;
+
+        if ((now - _lastTypingSentAt).TotalMilliseconds > 800)
+        {
+            _lastTypingSentAt = now;
+            await ChatService.SendTypingAsync(RoomId, !string.IsNullOrWhiteSpace(_newMessage));
+        }
+    }
+
+    private void OnUserTyping(string username, bool isTyping)
+    {
+        _typingCts?.Cancel();
+
+        if (!isTyping)
+        {
+            _typingText = string.Empty;
+            InvokeAsync(StateHasChanged);
+            return;
+        }
+
+        _typingText = $"{username} กำลังพิมพ์...";
+
+        _typingCts = new CancellationTokenSource();
+        var token = _typingCts.Token;
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await Task.Delay(2000, token);
+
+                if (!token.IsCancellationRequested)
+                {
+                    _typingText = string.Empty;
+                    await InvokeAsync(StateHasChanged);
+                }
+            }
+            catch (TaskCanceledException)
+            {
+            }
+        });
+
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void OnAvatarUpdated(string avatarUrl)
+    {
+        InvokeAsync(StateHasChanged);
+    }
+
+    private async Task SendMessage()
+    {
+        if (string.IsNullOrWhiteSpace(_newMessage)) return;
+
+        var content = _newMessage;
+        _newMessage = string.Empty;
+
+        await ChatService.SendTypingAsync(RoomId, false);
+        await ChatService.SendMessageAsync(RoomId, content);
+    }
+
+    private async Task HandleKeyPress(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && !e.ShiftKey)
+        {
+            await SendMessage();
+        }
+    }
+
+    private void GoBack()
+    {
+        Navigation.NavigateTo("/");
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        ChatService.MessageReceived -= OnMessageReceived;
+        ChatService.HistoryReceived -= OnHistoryReceived;
+        ChatService.UserJoined -= OnUserJoined;
+        ChatService.UserLeft -= OnUserLeft;
+        ChatService.ErrorOccurred -= OnError;
+        ChatService.UserTyping -= OnUserTyping;
+        ChatService.AvatarUpdated -= OnAvatarUpdated;
+
+        _typingCts?.Cancel();
+        _typingCts?.Dispose();
+
+        await ChatService.LeaveRoomAsync(RoomId);
+    }
+}

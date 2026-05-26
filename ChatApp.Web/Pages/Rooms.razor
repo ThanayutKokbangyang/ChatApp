@@ -1,0 +1,91 @@
+﻿@page "/"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@inject ChatApiService ChatService
+@inject NavigationManager Navigation
+
+<PageTitle>ห้องแชท</PageTitle>
+
+<div class="rooms-page">
+    <header class="page-header">
+        <h2>ห้องแชททั้งหมด</h2>
+        <button class="btn-primary" @onclick="@(() => _showCreateModal = true)">
+            + สร้างห้องใหม่
+        </button>
+    </header>
+
+    @if (_rooms is null)
+    {
+        <p>กำลังโหลด...</p>
+    }
+    else if (!_rooms.Any())
+    {
+        <p class="empty-state">ยังไม่มีห้องแชท สร้างห้องแรกกันเลย!</p>
+    }
+    else
+    {
+        <div class="room-list">
+            @foreach (var room in _rooms)
+            {
+                <div class="room-card" @onclick="@(() => EnterRoom(room.Id))">
+                    <h3>@room.Name</h3>
+                    @if (!string.IsNullOrEmpty(room.Description))
+                    {
+                        <p>@room.Description</p>
+                    }
+                    <small>สร้างเมื่อ @room.CreatedAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</small>
+                </div>
+            }
+        </div>
+    }
+
+    @if (_showCreateModal)
+    {
+        <div class="modal-backdrop" @onclick="@(() => _showCreateModal = false)">
+            <div class="modal" @onclick:stopPropagation>
+                <h3>สร้างห้องใหม่</h3>
+                <input @bind="_newRoomName" placeholder="ชื่อห้อง" class="form-control" />
+                <textarea @bind="_newRoomDesc" placeholder="รายละเอียด (ไม่บังคับ)" class="form-control"></textarea>
+                <div class="modal-actions">
+                    <button class="btn-secondary" @onclick="@(() => _showCreateModal = false)">ยกเลิก</button>
+                    <button class="btn-primary" @onclick="CreateRoom">สร้าง</button>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private IEnumerable<RoomDto>? _rooms;
+    private bool _showCreateModal;
+    private string _newRoomName = string.Empty;
+    private string _newRoomDesc = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadRoomsAsync();
+    }
+
+    private async Task LoadRoomsAsync()
+    {
+        _rooms = await ChatService.GetRoomsAsync();
+    }
+
+    private async Task CreateRoom()
+    {
+        if (string.IsNullOrWhiteSpace(_newRoomName)) return;
+
+        var room = await ChatService.CreateRoomAsync(_newRoomName, _newRoomDesc);
+        if (room is not null)
+        {
+            _showCreateModal = false;
+            _newRoomName = string.Empty;
+            _newRoomDesc = string.Empty;
+            await LoadRoomsAsync();
+        }
+    }
+
+    private void EnterRoom(Guid roomId)
+    {
+        Navigation.NavigateTo($"/chat/{roomId}");
+    }
+}

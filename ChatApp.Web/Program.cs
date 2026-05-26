@@ -1,28 +1,40 @@
-using ChatApp.Web.Components;
+using Blazored.LocalStorage;
+using ChatApp.Web;
+using ChatApp.Web.Services;
+using Microsoft.AspNetCore.Components.Authorization;
+using Microsoft.AspNetCore.Components.Web;
+using Microsoft.AspNetCore.Components.WebAssembly.Hosting;
 
-var builder = WebApplication.CreateBuilder(args);
+var builder = WebAssemblyHostBuilder.CreateDefault(args);
+builder.RootComponents.Add<App>("#app");
+builder.RootComponents.Add<HeadOutlet>("head::after");
 
-// Add services to the container.
-builder.Services.AddRazorComponents()
-    .AddInteractiveServerComponents();
+var baseAddress = builder.HostEnvironment.BaseAddress;
 
-var app = builder.Build();
+builder.Services.AddBlazoredLocalStorage();
 
-// Configure the HTTP request pipeline.
-if (!app.Environment.IsDevelopment())
+builder.Services.AddScoped<CustomAuthStateProvider>();
+builder.Services.AddScoped<AuthenticationStateProvider>(
+    sp => sp.GetRequiredService<CustomAuthStateProvider>());
+builder.Services.AddAuthorizationCore();
+
+builder.Services.AddScoped<AuthorizationMessageHandler>();
+
+builder.Services.AddHttpClient("anonymous", client =>
 {
-    app.UseExceptionHandler("/Error", createScopeForErrors: true);
-    // The default HSTS value is 30 days. You may want to change this for production scenarios, see https://aka.ms/aspnetcore-hsts.
-    app.UseHsts();
-}
+    client.BaseAddress = new Uri(baseAddress);
+});
 
-app.UseHttpsRedirection();
+builder.Services.AddHttpClient("authorized", client =>
+{
+    client.BaseAddress = new Uri(baseAddress);
+})
+.AddHttpMessageHandler<AuthorizationMessageHandler>();
 
+builder.Services.AddScoped(sp =>
+    sp.GetRequiredService<IHttpClientFactory>().CreateClient("anonymous"));
 
-app.UseAntiforgery();
+builder.Services.AddScoped<AuthApiService>();
+builder.Services.AddScoped<ChatApiService>();
 
-app.MapStaticAssets();
-app.MapRazorComponents<App>()
-    .AddInteractiveServerRenderMode();
-
-app.Run();
+await builder.Build().RunAsync();

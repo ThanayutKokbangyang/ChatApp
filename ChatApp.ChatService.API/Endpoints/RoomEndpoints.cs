@@ -25,13 +25,22 @@ namespace ChatApp.ChatService.API.Endpoints
             return Results.Ok(rooms);
         }
 
-        private static async Task<IResult> CreateRoomAsync(CreateRoomRequest request, ClaimsPrincipal user, IChatService chatService)
+        private static async Task<IResult> CreateRoomAsync(
+            CreateRoomRequest request,
+            ClaimsPrincipal user,
+            IChatService chatService)
         {
             try
             {
-                var userId = Guid.Parse(user.FindFirstValue(JwtRegisteredClaimNames.Sub)!);
-                var command = new CreateRoomCommand(request.Name, request.Description, userId);
+                var userId = GetUserId(user);
+
+                var command = new CreateRoomCommand(
+                    request.Name,
+                    request.Description,
+                    userId);
+
                 var room = await chatService.CreateRoomAsync(command);
+
                 return Results.Created($"/api/rooms/{room.Id}", room);
             }
             catch (Exception ex)
@@ -40,14 +49,45 @@ namespace ChatApp.ChatService.API.Endpoints
             }
         }
 
-        private static async Task<IResult> GetRoomHistoryAsync(Guid roomId, IChatService chatService, int page = 1, int pageSize = 50)
+        private static async Task<IResult> GetRoomHistoryAsync(
+            Guid roomId,
+            IChatService chatService,
+            int page = 1,
+            int pageSize = 50)
         {
             var messages = await chatService.GetRoomHistoryAsync(
-            new GetRoomHistoryQuery(roomId, page, pageSize));
+                new GetRoomHistoryQuery(roomId, page, pageSize));
+
             return Results.Ok(messages);
         }
 
-        public record CreateRoomRequest(string Name, string? Description);
+        private static Guid GetUserId(ClaimsPrincipal user)
+        {
+            var userId =
+                user.FindFirstValue(JwtRegisteredClaimNames.Sub) ??
+                user.FindFirstValue(ClaimTypes.NameIdentifier) ??
+                user.FindFirstValue("sub") ??
+                user.FindFirstValue("nameid") ??
+                user.FindFirstValue("userId") ??
+                user.FindFirstValue("uid");
 
+            if (string.IsNullOrWhiteSpace(userId))
+            {
+                var claims = user.Claims
+                    .Select(c => $"{c.Type}={c.Value}");
+
+                throw new InvalidOperationException(
+                    "User identity not found. Claims: " + string.Join(" | ", claims));
+            }
+
+            if (!Guid.TryParse(userId, out var parsedUserId))
+            {
+                throw new InvalidOperationException($"Invalid user id claim: {userId}");
+            }
+
+            return parsedUserId;
+        }
+
+        public record CreateRoomRequest(string Name, string? Description);
     }
 }

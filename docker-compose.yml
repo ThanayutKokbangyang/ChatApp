@@ -1,0 +1,106 @@
+# =====================================================================
+# Docker Compose: ChatApp (โครงสร้างแบบแบนที่ root)
+# ---------------------------------------------------------------------
+# วางไฟล์นี้ที่ D:\ChatApp\docker-compose.yml (ทับตัวเดิม)
+#
+# รัน:
+#   docker compose up --build                          (ทั้งระบบ)
+#   docker compose up --build auth-service sqlserver   (แค่ auth + db)
+#
+# Access:
+#   https://localhost          Blazor (ผ่าน nginx)
+#   https://localhost/auth/    Auth API
+#   https://localhost/chat/    Chat API + SignalR
+# =====================================================================
+
+services:
+  nginx:
+    image: nginx:alpine
+    container_name: chatapp-nginx
+    ports:
+      - "8080:80"
+      - "8443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/certs:/etc/nginx/certs:ro
+    depends_on:
+      - web
+      - auth-service
+      - chat-service
+    networks:
+      - chatapp-net
+
+  web:
+    build:
+      context: .
+      dockerfile: ChatApp.Web/Dockerfile
+    container_name: chatapp-web
+    networks:
+      - chatapp-net
+
+  auth-service:
+    build:
+      context: .
+      dockerfile: ChatApp.AuthService.API/Dockerfile
+    container_name: chatapp-auth
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+      - ConnectionStrings__AuthDb=Server=sqlserver,1433;Database=AuthDb;User Id=sa;Password=ChatApp!2026;TrustServerCertificate=True;Encrypt=False
+      - Jwt__Secret=super-secret-key-change-this-in-production-min-32-characters-long
+      - Jwt__Issuer=https://localhost/auth
+      - Jwt__Audience=https://localhost
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+    networks:
+      - chatapp-net
+
+  chat-service:
+    build:
+      context: .
+      dockerfile: ChatApp.ChatService.API/Dockerfile
+    container_name: chatapp-chat
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+      - ConnectionStrings__ChatDb=Server=sqlserver,1433;Database=ChatDb;User Id=sa;Password=ChatApp!2026;TrustServerCertificate=True;Encrypt=False
+      - Jwt__Secret=super-secret-key-change-this-in-production-min-32-characters-long
+      - Jwt__Issuer=https://localhost/auth
+      - Jwt__Audience=https://localhost
+    volumes:
+      - uploads_data:/app/wwwroot/uploads
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+    networks:
+      - chatapp-net
+
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: chatapp-sqlserver
+    ports:
+      - "1433:1433"
+    environment:
+      - ACCEPT_EULA=Y
+      - MSSQL_SA_PASSWORD=ChatApp!2026
+      - MSSQL_PID=Developer
+    volumes:
+      - sql_data:/var/opt/mssql
+      - ./sql/init.sql:/usr/src/app/init.sql:ro
+      - ./sql/entrypoint.sh:/usr/src/app/entrypoint.sh:ro
+    command: /bin/bash -c "/usr/src/app/entrypoint.sh"
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P 'ChatApp!2026' -C -Q 'SELECT 1' || exit 1"]
+      interval: 10s
+      retries: 10
+      start_period: 30s
+      timeout: 5s
+    networks:
+      - chatapp-net
+
+volumes:
+  sql_data:
+  uploads_data:
+
+networks:
+  chatapp-net:
+    driver: bridge
