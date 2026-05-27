@@ -36,20 +36,21 @@ namespace ChatApp.ChatService.Application.Services
             var room = await _roomRepo.GetByIdAsync(command.RoomId)
             ?? throw new DomainException($"Room {command.RoomId} not found");
 
-            var message = Message.Create(command.RoomId, command.SenderId, command.Content);
+            var message = Message.Create(command.RoomId, command.SenderId, command.Content, command.MessageType);
             await _messageRepo.AddAsync(message);
 
             var sender = await GetCachedUserAsync(command.SenderId);
 
             return new MessageDto(
-               message.Id,
-               message.RoomId,
-               message.SenderId,
-               sender?.Username ?? "Unknown",
-               sender?.AvatarUrl,
-               message.Content,
-               message.SentAt
-           );
+                message.Id,
+                message.RoomId,
+                message.SenderId,
+                sender?.Username ?? "Unknown",
+                sender?.AvatarUrl,
+                message.Content,
+                message.MessageType,
+                message.SentAt
+             );
         }
 
         public async Task<RoomDto> CreateRoomAsync(CreateRoomCommand command)
@@ -82,10 +83,14 @@ namespace ChatApp.ChatService.Application.Services
             {
                 var sender = await GetCachedUserAsync(msg.SenderId);
                 result.Add(new MessageDto(
-                    msg.Id, msg.RoomId, msg.SenderId,
+                    msg.Id,
+                    msg.RoomId,
+                    msg.SenderId,
                     sender?.Username ?? "Unknown",
                     sender?.AvatarUrl,
-                    msg.Content, msg.SentAt));
+                    msg.Content,
+                    msg.MessageType,
+                    msg.SentAt));
             }
 
             // ส่งกลับเรียงจากเก่า → ใหม่ (เพราะ DB query เรียง DESC)

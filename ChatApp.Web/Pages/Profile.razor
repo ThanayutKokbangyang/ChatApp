@@ -43,16 +43,25 @@
 
 @code {
     private string? _avatarUrl;
+    private long _avatarVersion = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+
     private bool _uploading;
     private string _message = string.Empty;
     private string _error = string.Empty;
 
     protected override async Task OnInitializedAsync()
     {
+        await LoadProfileAsync();
+    }
+
+    private async Task LoadProfileAsync()
+    {
         try
         {
             var profile = await ChatService.GetMyProfileAsync();
+
             _avatarUrl = profile?.AvatarUrl;
+            _avatarVersion = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         }
         catch (Exception ex)
         {
@@ -80,10 +89,13 @@
             using var stream = file.OpenReadStream(maxAllowedSize: 5 * 1024 * 1024);
             var url = await ChatService.UploadAvatarAsync(stream, file.Name);
 
-            if (!string.IsNullOrEmpty(url))
+            if (!string.IsNullOrWhiteSpace(url))
             {
                 _avatarUrl = url;
+                _avatarVersion = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
                 _message = "อัพโหลดสำเร็จ!";
+
+                await InvokeAsync(StateHasChanged);
             }
             else
             {
@@ -100,16 +112,19 @@
         }
     }
 
-    private static string GetAvatarUrl(string? avatarUrl)
+    private string GetAvatarUrl(string? avatarUrl)
     {
         if (string.IsNullOrWhiteSpace(avatarUrl))
             return string.Empty;
 
-        if (avatarUrl.StartsWith("http", StringComparison.OrdinalIgnoreCase))
-            return avatarUrl;
+        var separator = avatarUrl.Contains('?') ? "&" : "?";
+        var versionedAvatarUrl = $"{avatarUrl}{separator}v={_avatarVersion}";
 
-        return avatarUrl.StartsWith("/")
-            ? $"/chat{avatarUrl}"
-            : $"/chat/{avatarUrl}";
+        if (versionedAvatarUrl.StartsWith("http", StringComparison.OrdinalIgnoreCase))
+            return versionedAvatarUrl;
+
+        return versionedAvatarUrl.StartsWith("/")
+            ? $"/chat{versionedAvatarUrl}"
+            : $"/chat/{versionedAvatarUrl}";
     }
 }

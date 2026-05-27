@@ -1,10 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-
-namespace ChatApp.ChatService.Application.DTOs
+﻿namespace ChatApp.ChatService.Application.DTOs
 {
     public record MessageDto(
         Guid Id,
@@ -13,6 +7,7 @@ namespace ChatApp.ChatService.Application.DTOs
         string SenderUsername,
         string? SenderAvatarUrl,
         string Content,
+        string MessageType,
         DateTime SentAt
     );
 

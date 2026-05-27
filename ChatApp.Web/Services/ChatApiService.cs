@@ -16,6 +16,7 @@ namespace ChatApp.Web.Services
         public event Action<string>? UserLeft;
         public event Action<string>? ErrorOccurred;
         public event Action<string, bool>? UserTyping;
+        public event Action<string>? AvatarUpdated;
 
         public bool IsConnected => _hubConnection?.State == HubConnectionState.Connected;
 
@@ -27,7 +28,8 @@ namespace ChatApp.Web.Services
 
         public async Task StartAsync(string hubUrl)
         {
-            if (_hubConnection?.State == HubConnectionState.Connected) return;
+            if (_hubConnection?.State == HubConnectionState.Connected)
+                return;
 
             _hubConnection = new HubConnectionBuilder()
                 .WithUrl(hubUrl, options =>
@@ -38,56 +40,74 @@ namespace ChatApp.Web.Services
                 .Build();
 
             _hubConnection.On<MessageDto>("ReceiveMessage", msg =>
-                MessageReceived?.Invoke(msg));
+            {
+                MessageReceived?.Invoke(msg);
+            });
 
             _hubConnection.On<IEnumerable<MessageDto>>("ReceiveHistory", history =>
-                HistoryReceived?.Invoke(history));
+            {
+                HistoryReceived?.Invoke(history);
+            });
 
             _hubConnection.On<string>("UserJoined", username =>
-                UserJoined?.Invoke(username));
+            {
+                UserJoined?.Invoke(username);
+            });
 
             _hubConnection.On<string>("UserLeft", username =>
-                UserLeft?.Invoke(username));
+            {
+                UserLeft?.Invoke(username);
+            });
 
             _hubConnection.On<string>("ErrorOccurred", error =>
-                ErrorOccurred?.Invoke(error));
+            {
+                ErrorOccurred?.Invoke(error);
+            });
 
             _hubConnection.On<string, bool>("UserTyping", (username, isTyping) =>
-                UserTyping?.Invoke(username, isTyping));
+            {
+                UserTyping?.Invoke(username, isTyping);
+            });
 
             await _hubConnection.StartAsync();
         }
 
         public async Task JoinRoomAsync(Guid roomId)
         {
-            if (_hubConnection is null) return;
+            if (_hubConnection is null)
+                return;
+
             await _hubConnection.InvokeAsync("JoinRoom", roomId.ToString());
         }
 
         public async Task LeaveRoomAsync(Guid roomId)
         {
-            if (_hubConnection is null) return;
+            if (_hubConnection is null)
+                return;
+
             await _hubConnection.InvokeAsync("LeaveRoom", roomId.ToString());
         }
 
         public async Task SendMessageAsync(Guid roomId, string content)
         {
-            if (_hubConnection is null) return;
+            if (_hubConnection is null)
+                return;
+
             await _hubConnection.InvokeAsync("SendMessage", roomId.ToString(), content);
         }
 
         public async Task SendTypingAsync(Guid roomId, bool isTyping)
         {
-            if (_hubConnection is null) return;
+            if (_hubConnection is null)
+                return;
 
-            await _hubConnection.InvokeAsync(
-                "SendTyping",
-                roomId.ToString(),
-                isTyping);
+            await _hubConnection.InvokeAsync("SendTyping", roomId.ToString(), isTyping);
         }
 
         public async Task<IEnumerable<RoomDto>?> GetRoomsAsync()
-            => await _http.GetFromJsonAsync<IEnumerable<RoomDto>>("/chat/api/rooms");
+        {
+            return await _http.GetFromJsonAsync<IEnumerable<RoomDto>>("/chat/api/rooms");
+        }
 
         public async Task<RoomDto?> CreateRoomAsync(string name, string? description)
         {
@@ -101,34 +121,85 @@ namespace ChatApp.Web.Services
         }
 
         public async Task<UserInfo?> GetMyProfileAsync()
-            => await _http.GetFromJsonAsync<UserInfo>("/chat/api/profile/me");
-
-        public event Action<string>? AvatarUpdated;
+        {
+            return await _http.GetFromJsonAsync<UserInfo>("/chat/api/profile/me");
+        }
 
         public async Task<string?> UploadAvatarAsync(Stream fileStream, string fileName)
         {
             using var content = new MultipartFormDataContent();
             using var streamContent = new StreamContent(fileStream);
+
             content.Add(streamContent, "file", fileName);
 
             var response = await _http.PostAsync("/chat/api/profile/avatar", content);
-            if (!response.IsSuccessStatusCode) return null;
+            if (!response.IsSuccessStatusCode)
+                return null;
 
             var result = await response.Content.ReadFromJsonAsync<Dictionary<string, string>>();
 
-            if (result is not null && result.TryGetValue("avatarUrl", out var avatarUrl))
-            {
-                AvatarUpdated?.Invoke(avatarUrl);
-                return avatarUrl;
-            }
+            if (result is null)
+                return null;
 
-            return null;
+            if (!result.TryGetValue("avatarUrl", out var avatarUrl))
+                return null;
+
+            if (string.IsNullOrWhiteSpace(avatarUrl))
+                return null;
+
+            AvatarUpdated?.Invoke(avatarUrl);
+
+            return avatarUrl;
+        }
+
+        public async Task SendImageMessageAsync(Guid roomId, string imageUrl)
+        {
+            if (_hubConnection is null)
+                return;
+
+            await _hubConnection.InvokeAsync("SendImageMessage", roomId.ToString(), imageUrl);
+        }
+
+        public async Task<string?> UploadChatImageAsync(Stream fileStream, string fileName)
+        {
+            using var content = new MultipartFormDataContent();
+            using var streamContent = new StreamContent(fileStream);
+
+            content.Add(streamContent, "file", fileName);
+
+            var response = await _http.PostAsync("/chat/api/messages/image", content);
+            if (!response.IsSuccessStatusCode)
+                return null;
+
+            var result = await response.Content.ReadFromJsonAsync<Dictionary<string, string>>();
+
+            if (result is null)
+                return null;
+
+            return result.TryGetValue("imageUrl", out var imageUrl)
+                ? imageUrl
+                : null;
+        }
+        public async Task SendStickerMessageAsync(Guid roomId, string sticker)
+        {
+            if (_hubConnection is null)
+                return;
+
+            await _hubConnection.InvokeAsync(
+                "SendStickerMessage",
+                roomId.ToString(),
+                sticker);
         }
 
         public async ValueTask DisposeAsync()
         {
             if (_hubConnection is not null)
+            {
                 await _hubConnection.DisposeAsync();
+                _hubConnection = null;
+            }
         }
+
+
     }
 }

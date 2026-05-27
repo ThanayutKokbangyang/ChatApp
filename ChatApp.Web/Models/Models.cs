@@ -27,14 +27,15 @@
     );
 
     public record MessageDto(
-        Guid Id,
-        Guid RoomId,
-        Guid SenderId,
-        string SenderUsername,
-        string? SenderAvatarUrl,
-        string Content,
-        DateTime SentAt
-    );
+         Guid Id,
+         Guid RoomId,
+         Guid SenderId,
+         string SenderUsername,
+         string? SenderAvatarUrl,
+         string Content,
+         string MessageType,
+         DateTime SentAt
+     );
 
     public record CreateRoomRequest(string Name, string? Description);
 

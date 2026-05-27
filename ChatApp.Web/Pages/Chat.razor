@@ -3,6 +3,7 @@
 @inject ChatApiService ChatService
 @inject NavigationManager Navigation
 @inject AuthenticationStateProvider AuthStateProvider
+@inject IJSRuntime JS
 @implements IAsyncDisposable
 
 <PageTitle>แชท</PageTitle>
@@ -20,14 +21,15 @@
         @foreach (var msg in _messages)
         {
             var isMine = IsMyMessage(msg);
+            var avatarUrl = GetMessageAvatarUrl(msg);
 
             <div class="message-item @(isMine ? "mine" : "other")">
                 @if (!isMine)
                 {
                     <div class="avatar">
-                        @if (!string.IsNullOrEmpty(msg.SenderAvatarUrl))
+                        @if (!string.IsNullOrEmpty(avatarUrl))
                         {
-                            <img src="@GetAvatarUrl(msg.SenderAvatarUrl)" alt="@msg.SenderUsername" />
+                            <img src="@avatarUrl" alt="@msg.SenderUsername" />
                         }
                         else
                         {
@@ -44,17 +46,35 @@
                         <small>@msg.SentAt.ToLocalTime().ToString("HH:mm")</small>
                     </div>
 
-                    <div class="message-text">
-                        @msg.Content
-                    </div>
+                    @if (msg.MessageType == "image")
+                    {
+                        var imageUrl = GetChatImageUrl(msg.Content);
+
+                        <img src="@imageUrl"
+                             class="chat-image"
+                             alt="image message"
+                             @onclick="@(() => OpenImagePreview(imageUrl))" />
+                    }
+                    else if (msg.MessageType == "sticker")
+                    {
+                        <div class="message-sticker">
+                            @msg.Content
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="message-text">
+                            @msg.Content
+                        </div>
+                    }
                 </div>
 
                 @if (isMine)
                 {
                     <div class="avatar">
-                        @if (!string.IsNullOrEmpty(msg.SenderAvatarUrl))
+                        @if (!string.IsNullOrEmpty(avatarUrl))
                         {
-                            <img src="@GetAvatarUrl(msg.SenderAvatarUrl)" alt="@msg.SenderUsername" />
+                            <img src="@avatarUrl" alt="@msg.SenderUsername" />
                         }
                         else
                         {
@@ -75,12 +95,33 @@
         </div>
     }
 
+    @if (_showStickerPanel)
+    {
+        <div class="sticker-panel">
+            @foreach (var sticker in _stickers)
+            {
+                <button class="sticker-item" @onclick="@(() => SendSticker(sticker))">
+                    @sticker
+                </button>
+            }
+        </div>
+    }
+
     @if (!string.IsNullOrEmpty(_error))
     {
         <div class="alert alert-error">@_error</div>
     }
 
     <div class="message-input">
+        <button class="btn-secondary sticker-button" @onclick="ToggleStickerPanel">
+            😊
+        </button>
+
+        <label class="btn-secondary image-upload-button">
+            รูป
+            <InputFile OnChange="HandleImageSelected" accept="image/*" class="hidden-file-input" />
+        </label>
+
         <input value="@_newMessage"
                @oninput="HandleMessageInput"
                @onkeydown="HandleKeyPress"
@@ -96,6 +137,16 @@
     </div>
 </div>
 
+@if (!string.IsNullOrEmpty(_previewImageUrl))
+{
+    <div class="image-preview-backdrop" @onclick="CloseImagePreview">
+        <div class="image-preview-modal" @onclick:stopPropagation>
+            <button class="image-preview-close" @onclick="CloseImagePreview">×</button>
+            <img src="@_previewImageUrl" alt="preview" />
+        </div>
+    </div>
+}
+
 @code {
     [Parameter] public Guid RoomId { get; set; }
 
@@ -104,17 +155,31 @@
     private string _error = string.Empty;
     private bool _connected;
     private ElementReference _messagesContainer;
+    private bool _shouldScrollToBottom;
 
     private Guid? _currentUserId;
     private string? _currentUsername;
+    private string? _myAvatarUrl;
 
     private string _typingText = string.Empty;
     private CancellationTokenSource? _typingCts;
     private DateTime _lastTypingSentAt = DateTime.MinValue;
 
+    private string? _previewImageUrl;
+
+    private bool _showStickerPanel;
+
+    private readonly string[] _stickers =
+    [
+        "😀", "😂", "😍", "🥳", "😎", "😭",
+        "👍", "🙏", "🔥", "❤️", "🎉", "🤔",
+        "😡", "😴", "😇", "🤯", "💯", "👀"
+    ];
+
     protected override async Task OnInitializedAsync()
     {
         await LoadCurrentUserAsync();
+        await LoadMyProfileAsync();
 
         ChatService.MessageReceived += OnMessageReceived;
         ChatService.HistoryReceived += OnHistoryReceived;
@@ -130,6 +195,23 @@
         _connected = ChatService.IsConnected;
 
         await ChatService.JoinRoomAsync(RoomId);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_shouldScrollToBottom)
+        {
+            _shouldScrollToBottom = false;
+
+            try
+            {
+                await JS.InvokeVoidAsync("chatScrollToBottom", _messagesContainer);
+            }
+            catch
+            {
+                // กัน error ถ้า JS ยังโหลดไม่ทัน
+            }
+        }
     }
 
     private async Task LoadCurrentUserAsync()
@@ -157,6 +239,19 @@
         }
     }
 
+    private async Task LoadMyProfileAsync()
+    {
+        try
+        {
+            var profile = await ChatService.GetMyProfileAsync();
+            _myAvatarUrl = profile?.AvatarUrl;
+        }
+        catch
+        {
+            // ถ้าโหลด profile ไม่ได้ ไม่ต้องให้หน้าแชทล้ม
+        }
+    }
+
     private bool IsMyMessage(MessageDto message)
     {
         if (_currentUserId.HasValue && message.SenderId == _currentUserId.Value)
@@ -169,20 +264,38 @@
         return false;
     }
 
+    private string GetMessageAvatarUrl(MessageDto message)
+    {
+        if (IsMyMessage(message) && !string.IsNullOrWhiteSpace(_myAvatarUrl))
+            return GetAvatarUrl(_myAvatarUrl);
+
+        return GetAvatarUrl(message.SenderAvatarUrl);
+    }
+
     private static string GetAvatarUrl(string? avatarUrl)
     {
         if (string.IsNullOrWhiteSpace(avatarUrl))
             return string.Empty;
 
-        var separator = avatarUrl.Contains('?') ? "&" : "?";
-        var versionedAvatarUrl = $"{avatarUrl}{separator}v={DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}";
+        if (avatarUrl.StartsWith("http", StringComparison.OrdinalIgnoreCase))
+            return avatarUrl;
 
-        if (versionedAvatarUrl.StartsWith("http", StringComparison.OrdinalIgnoreCase))
-            return versionedAvatarUrl;
+        return avatarUrl.StartsWith("/")
+            ? $"/chat{avatarUrl}"
+            : $"/chat/{avatarUrl}";
+    }
 
-        return versionedAvatarUrl.StartsWith("/")
-            ? $"/chat{versionedAvatarUrl}"
-            : $"/chat/{versionedAvatarUrl}";
+    private static string GetChatImageUrl(string? imageUrl)
+    {
+        if (string.IsNullOrWhiteSpace(imageUrl))
+            return string.Empty;
+
+        if (imageUrl.StartsWith("http", StringComparison.OrdinalIgnoreCase))
+            return imageUrl;
+
+        return imageUrl.StartsWith("/")
+            ? $"/chat{imageUrl}"
+            : $"/chat/{imageUrl}";
     }
 
     private static string GetInitial(string? username)
@@ -193,15 +306,48 @@
         return username[0].ToString().ToUpper();
     }
 
+    private void OpenImagePreview(string imageUrl)
+    {
+        if (string.IsNullOrWhiteSpace(imageUrl))
+            return;
+
+        _previewImageUrl = imageUrl;
+    }
+
+    private void CloseImagePreview()
+    {
+        _previewImageUrl = null;
+    }
+
+    private void ToggleStickerPanel()
+    {
+        _showStickerPanel = !_showStickerPanel;
+    }
+
+    private async Task SendSticker(string sticker)
+    {
+        if (!_connected)
+            return;
+
+        _showStickerPanel = false;
+
+        await ChatService.SendTypingAsync(RoomId, false);
+        await ChatService.SendStickerMessageAsync(RoomId, sticker);
+
+        _shouldScrollToBottom = true;
+    }
+
     private void OnMessageReceived(MessageDto message)
     {
         _messages.Add(message);
+        _shouldScrollToBottom = true;
         InvokeAsync(StateHasChanged);
     }
 
     private void OnHistoryReceived(IEnumerable<MessageDto> history)
     {
         _messages = history.ToList();
+        _shouldScrollToBottom = true;
         InvokeAsync(StateHasChanged);
     }
 
@@ -275,6 +421,7 @@
 
     private void OnAvatarUpdated(string avatarUrl)
     {
+        _myAvatarUrl = avatarUrl;
         InvokeAsync(StateHasChanged);
     }
 
@@ -287,6 +434,42 @@
 
         await ChatService.SendTypingAsync(RoomId, false);
         await ChatService.SendMessageAsync(RoomId, content);
+
+        _shouldScrollToBottom = true;
+    }
+
+    private async Task HandleImageSelected(InputFileChangeEventArgs e)
+    {
+        _error = string.Empty;
+
+        var file = e.File;
+
+        if (file.Size > 5 * 1024 * 1024)
+        {
+            _error = "รูปต้องมีขนาดไม่เกิน 5 MB";
+            return;
+        }
+
+        try
+        {
+            using var stream = file.OpenReadStream(maxAllowedSize: 5 * 1024 * 1024);
+            var imageUrl = await ChatService.UploadChatImageAsync(stream, file.Name);
+
+            if (string.IsNullOrWhiteSpace(imageUrl))
+            {
+                _error = "อัปโหลดรูปไม่สำเร็จ";
+                return;
+            }
+
+            await ChatService.SendTypingAsync(RoomId, false);
+            await ChatService.SendImageMessageAsync(RoomId, imageUrl);
+
+            _shouldScrollToBottom = true;
+        }
+        catch (Exception ex)
+        {
+            _error = $"ส่งรูปไม่สำเร็จ: {ex.Message}";
+        }
     }
 
     private async Task HandleKeyPress(KeyboardEventArgs e)

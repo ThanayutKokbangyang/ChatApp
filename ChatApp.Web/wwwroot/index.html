@@ -19,5 +19,15 @@
     </div>
 
     <script src="_framework/blazor.webassembly.js"></script>
+
+    <script>
+        window.chatScrollToBottom = function (element) {
+            if (!element) return;
+
+            requestAnimationFrame(() => {
+                element.scrollTop = element.scrollHeight;
+            });
+        };
+    </script>
 </body>
 </html>

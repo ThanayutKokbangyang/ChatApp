@@ -80,15 +80,16 @@ BEGIN
 END
 GO
 
-IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='Messages' AND xtype='U')
+IIF NOT EXISTS (SELECT * FROM sysobjects WHERE name='Messages' AND xtype='U')
 BEGIN
     CREATE TABLE Messages (
-        Id        UNIQUEIDENTIFIER PRIMARY KEY DEFAULT NEWSEQUENTIALID(),
-        RoomId    UNIQUEIDENTIFIER NOT NULL REFERENCES Rooms(Id),
-        SenderId  UNIQUEIDENTIFIER NOT NULL REFERENCES ChatUsers(Id),
-        Content   NVARCHAR(MAX)    NOT NULL,
-        SentAt    DATETIME2        NOT NULL DEFAULT GETUTCDATE(),
-        IsDeleted BIT              NOT NULL DEFAULT 0
+        Id          UNIQUEIDENTIFIER PRIMARY KEY DEFAULT NEWSEQUENTIALID(),
+        RoomId      UNIQUEIDENTIFIER NOT NULL REFERENCES Rooms(Id),
+        SenderId    UNIQUEIDENTIFIER NOT NULL REFERENCES ChatUsers(Id),
+        Content     NVARCHAR(MAX)    NOT NULL,
+        MessageType NVARCHAR(20)     NOT NULL DEFAULT 'text',
+        SentAt      DATETIME2        NOT NULL DEFAULT GETUTCDATE(),
+        IsDeleted   BIT              NOT NULL DEFAULT 0
     );
 
     -- Index สำคัญสำหรับ query GetByRoomAsync (paged messages by room)

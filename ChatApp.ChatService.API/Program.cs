@@ -83,6 +83,7 @@ app.UseAuthorization();
 // REST endpoints
 app.MapRoomEndpoints();
 app.MapProfileEndpoints();
+app.MapMessageImageEndpoints();
 
 app.MapHub<ChatHub>("/hubs/chat");
 

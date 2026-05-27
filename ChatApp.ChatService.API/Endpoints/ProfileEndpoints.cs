@@ -38,6 +38,7 @@ namespace ChatApp.ChatService.API.Endpoints
                     return Results.BadRequest(new { error = "File size exceeds 5 MB" });
 
                 var ext = Path.GetExtension(file.FileName).ToLowerInvariant();
+
                 if (!AllowedExtensions.Contains(ext))
                 {
                     return Results.BadRequest(new
@@ -47,7 +48,10 @@ namespace ChatApp.ChatService.API.Endpoints
                 }
 
                 var userId = GetUserId(user);
-                var fileName = $"{userId}{ext}";
+
+                // สร้างชื่อไฟล์ใหม่ทุกครั้ง เพื่อกัน browser/nginx cache รูปเก่า
+                var timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                var fileName = $"{userId}_{timestamp}{ext}";
 
                 await using var stream = file.OpenReadStream();
                 var avatarUrl = await fileStorage.SaveAsync(stream, fileName, AvatarFolder);
@@ -63,8 +67,8 @@ namespace ChatApp.ChatService.API.Endpoints
         }
 
         private static async Task<IResult> GetMyProfileAsync(
-            ClaimsPrincipal user,
-            IChatUserRepository userRepo)
+    ClaimsPrincipal user,
+    IChatUserRepository userRepo)
         {
             try
             {
@@ -72,7 +76,22 @@ namespace ChatApp.ChatService.API.Endpoints
                 var chatUser = await userRepo.GetByIdAsync(userId);
 
                 if (chatUser is null)
-                    return Results.NotFound();
+                {
+                    var username =
+                        user.FindFirstValue(ClaimTypes.Name) ??
+                        user.FindFirstValue(JwtRegisteredClaimNames.Name) ??
+                        user.FindFirstValue("username") ??
+                        user.Identity?.Name ??
+                        "Unknown";
+
+                    return Results.Ok(new
+                    {
+                        Id = userId,
+                        Username = username,
+                        AvatarUrl = (string?)null,
+                        LastSeenAt = DateTime.UtcNow
+                    });
+                }
 
                 return Results.Ok(new
                 {
@@ -101,6 +120,7 @@ namespace ChatApp.ChatService.API.Endpoints
             if (string.IsNullOrWhiteSpace(userId))
             {
                 var claims = user.Claims.Select(c => $"{c.Type}={c.Value}");
+
                 throw new InvalidOperationException(
                     "User identity not found. Claims: " + string.Join(" | ", claims));
             }

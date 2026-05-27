@@ -55,7 +55,32 @@ namespace ChatApp.ChatService.API.Hubs
                 var command = new SendMessageCommand(
                     Guid.Parse(roomId),
                     GetUserId(),
-                    content);
+                    content,
+                    "text");
+
+                var message = await _chatService.SendMessageAsync(command);
+
+                await Clients.Group(roomId).SendAsync("ReceiveMessage", message);
+            }
+            catch (DomainException ex)
+            {
+                await Clients.Caller.SendAsync("ErrorOccurred", ex.Message);
+            }
+            catch (Exception ex)
+            {
+                await Clients.Caller.SendAsync("ErrorOccurred", ex.Message);
+            }
+        }
+
+        public async Task SendImageMessage(string roomId, string imageUrl)
+        {
+            try
+            {
+                var command = new SendMessageCommand(
+                    Guid.Parse(roomId),
+                    GetUserId(),
+                    imageUrl,
+                    "image");
 
                 var message = await _chatService.SendMessageAsync(command);
 
@@ -107,6 +132,30 @@ namespace ChatApp.ChatService.API.Hubs
                 Context.User?.FindFirstValue("username") ??
                 Context.User?.Identity?.Name ??
                 "Unknown";
+        }
+
+        public async Task SendStickerMessage(string roomId, string sticker)
+        {
+            try
+            {
+                var command = new SendMessageCommand(
+                    Guid.Parse(roomId),
+                    GetUserId(),
+                    sticker,
+                    "sticker");
+
+                var message = await _chatService.SendMessageAsync(command);
+
+                await Clients.Group(roomId).SendAsync("ReceiveMessage", message);
+            }
+            catch (DomainException ex)
+            {
+                await Clients.Caller.SendAsync("ErrorOccurred", ex.Message);
+            }
+            catch (Exception ex)
+            {
+                await Clients.Caller.SendAsync("ErrorOccurred", ex.Message);
+            }
         }
     }
 }

@@ -1,15 +1,9 @@
 ﻿using ChatApp.ChatService.Domain.Entities;
 using ChatApp.ChatService.Domain.Interfaces;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 using Dapper;
 
 namespace ChatApp.ChatService.Infrastructure.Repositories
 {
-
     public class MessageRepository : IMessageRepository
     {
         private readonly IDbConnectionFactory _connectionFactory;
@@ -22,7 +16,7 @@ namespace ChatApp.ChatService.Infrastructure.Repositories
         public async Task<IEnumerable<Message>> GetByRoomAsync(Guid roomId, int page, int pageSize)
         {
             const string sql = """
-                SELECT Id, RoomId, SenderId, Content, SentAt, IsDeleted
+                SELECT Id, RoomId, SenderId, Content, MessageType, SentAt, IsDeleted
                 FROM Messages
                 WHERE RoomId = @RoomId AND IsDeleted = 0
                 ORDER BY SentAt DESC
@@ -30,6 +24,7 @@ namespace ChatApp.ChatService.Infrastructure.Repositories
                 """;
 
             using var conn = _connectionFactory.CreateConnection();
+
             return await conn.QueryAsync<Message>(sql, new
             {
                 RoomId = roomId,
@@ -41,8 +36,9 @@ namespace ChatApp.ChatService.Infrastructure.Repositories
         public async Task<Message?> GetByIdAsync(Guid id)
         {
             const string sql = """
-                SELECT Id, RoomId, SenderId, Content, SentAt, IsDeleted
-                FROM Messages WHERE Id = @Id
+                SELECT Id, RoomId, SenderId, Content, MessageType, SentAt, IsDeleted
+                FROM Messages
+                WHERE Id = @Id
                 """;
 
             using var conn = _connectionFactory.CreateConnection();
@@ -52,9 +48,9 @@ namespace ChatApp.ChatService.Infrastructure.Repositories
         public async Task<Guid> AddAsync(Message message)
         {
             const string sql = """
-                INSERT INTO Messages(Id, RoomId, SenderId, Content, SentAt, IsDeleted)
+                INSERT INTO Messages(Id, RoomId, SenderId, Content, MessageType, SentAt, IsDeleted)
                 OUTPUT INSERTED.Id
-                VALUES(@Id, @RoomId, @SenderId, @Content, @SentAt, @IsDeleted)
+                VALUES(@Id, @RoomId, @SenderId, @Content, @MessageType, @SentAt, @IsDeleted)
                 """;
 
             using var conn = _connectionFactory.CreateConnection();
@@ -64,9 +60,9 @@ namespace ChatApp.ChatService.Infrastructure.Repositories
         public async Task UpdateAsync(Message message)
         {
             const string sql = "UPDATE Messages SET IsDeleted = @IsDeleted WHERE Id = @Id";
+
             using var conn = _connectionFactory.CreateConnection();
             await conn.ExecuteAsync(sql, new { message.Id, message.IsDeleted });
         }
-
     }
 }

@@ -837,3 +837,73 @@ html, body {
     .dropdown-item.logout {
         color: #dc2626;
     }
+
+.chat-image {
+    display: block;
+    max-width: 260px;
+    max-height: 260px;
+    border-radius: 12px;
+    object-fit: cover;
+    cursor: pointer;
+}
+
+.message-item.mine .chat-image {
+    border-bottom-right-radius: 4px;
+}
+
+.message-item.other .chat-image {
+    border-bottom-left-radius: 4px;
+}
+
+.image-upload-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0;
+    white-space: nowrap;
+}
+
+.hidden-file-input {
+    display: none;
+}
+
+.image-preview-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.75);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 3000;
+    padding: 24px;
+}
+
+.image-preview-modal {
+    position: relative;
+    max-width: 90vw;
+    max-height: 90vh;
+}
+
+    .image-preview-modal img {
+        max-width: 90vw;
+        max-height: 90vh;
+        border-radius: 12px;
+        object-fit: contain;
+        display: block;
+    }
+
+.image-preview-close {
+    position: absolute;
+    top: -14px;
+    right: -14px;
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    border: none;
+    background: #fff;
+    color: #111827;
+    font-size: 24px;
+    line-height: 1;
+    cursor: pointer;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.25);
+}
