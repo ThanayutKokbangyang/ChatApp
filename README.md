@@ -14,23 +14,24 @@
 
 ## Architecture
 
-```
+```text
             [ Browser ]
-                 │
-                 ▼ HTTPS / WSS
-        ┌─────────────────┐
-        │  Nginx Gateway  │  (port 8080 → 8443 redirect, TLS termination)
-        └─────────────────┘
-           │      │      │
-       /   │  /auth/  /chat/ , /hubs/
-           ▼      ▼      ▼
-    [Blazor]  [Auth]  [Chat]
-                │      │
-                ▼      ▼
-       AuthDb         ChatDb
-                          │
-                          ▼
+                 |
+                 v  HTTPS / WSS
+        +-----------------+
+        |  Nginx Gateway  |  (port 8080 -> 8443 redirect, TLS termination)
+        +-----------------+
+           |      |      |
+       /   |  /auth/  /chat/ , /hubs/
+           v      v      v
+       [Blazor] [Auth] [Chat]
+                  |      |
+                  v      v
+               AuthDb   ChatDb
+                          |
+                          v
                   uploads/avatars (volume)
+```
 
 ## Design Patterns ที่ใช้ในโปรเจคนี้
 
@@ -38,23 +39,23 @@
 |---------|----------|
 | **Clean Architecture** | แยก Domain / Application / Infrastructure / API ทุก service |
 | **Repository Pattern** | `IUserRepository`, `IMessageRepository`, `IRoomRepository`, `IChatUserRepository`, `IRefreshTokenRepository` |
-| **Factory Pattern** | `IDbConnectionFactory` → `SqlConnectionFactory` |
+| **Factory Pattern** | `IDbConnectionFactory` -> `SqlConnectionFactory` |
 | **Factory Method** | `User.Create()`, `Message.Create()`, `Room.Create()`, `RefreshToken.Create()` |
 | **Strategy Pattern** | `ITokenService`, `IPasswordHasher`, `ICacheService`, `IFileStorageService` |
-| **Service Layer / Facade** | `IAuthService` → `AuthService`, `IChatService` → `ChatAppService` |
+| **Service Layer / Facade** | `IAuthService` -> `AuthService`, `IChatService` -> `ChatAppService` |
 | **CQRS** | Commands (`SendMessageCommand`, `LoginCommand`) vs Queries (`GetRoomHistoryQuery`) |
 | **Command Pattern** | `record` types เป็น immutable command objects |
 | **Builder Pattern** | `AddAuthInfrastructure()`, `AddChatInfrastructure()` extension methods |
 | **Chain of Responsibility** | ASP.NET Middleware Pipeline + `AuthorizationMessageHandler` (HTTP DelegatingHandler) |
 | **Observer Pattern** | `AuthenticationStateProvider`, SignalR events (`MessageReceived`, `UserJoined`) |
-| **API Gateway Pattern** | Nginx routing → multiple services |
+| **API Gateway Pattern** | Nginx routing -> multiple services |
 | **Cache-Aside Pattern** | `ChatAppService.GetCachedUserAsync()` |
 | **Hub / Mediator Pattern** | `ChatHub` — clients communicate via hub, ไม่ต้องรู้กันเอง |
 | **DTO Pattern** | `MessageDto`, `TokenResponseDto` แยก API contract จาก Domain |
 
 ## Project Structure
 
-```
+```text
 ChatApp (Solution)
 ├── src/
 │   ├── ChatApp.AuthService/
@@ -84,13 +85,24 @@ ChatApp (Solution)
 ใช้ Docker สร้าง cert (ไม่ต้องติดตั้ง openssl บนเครื่อง) — รันที่ root ของโปรเจค:
 
 ```powershell
+mkdir nginx\certs
+
+docker run --rm -v "${PWD}\nginx\certs:/certs" alpine/openssl req -x509 -nodes -days 365 -newkey rsa:2048 -keyout /certs/key.pem -out /certs/cert.pem -subj "/CN=localhost"
+```
 
 ### 2. รัน Docker Compose
 
-```bashง
+```bash
+docker compose up --build -d
+```
 
-### 3. เปิดเว็บ https://localhost:8443
-> Browser จะเตือนเรื่อง certificate ไม่ valid (เพราะ self-signed) — กด "Advanced" → "Proceed to localhost"
+### 3. เปิดเว็บ
+
+```text
+https://localhost:8443
+```
+
+> Browser จะเตือนเรื่อง certificate ไม่ valid (เพราะ self-signed) — กด "Advanced" -> "Proceed to localhost"
 > (ถ้าหาปุ่มไม่เจอ คลิกบนหน้าจอเตือนแล้วพิมพ์ `thisisunsafe`)
 
 ### 4. ทดสอบ
@@ -98,9 +110,9 @@ ChatApp (Solution)
 1. คลิก **สมัครสมาชิก** สร้าง account ใหม่
 2. **เข้าสู่ระบบ** ด้วย account ที่สมัคร
 3. **สร้างห้องแชท** ใหม่
-4. เปิดอีก browser/tab ด้วย account อื่น → เข้าห้องเดียวกัน
+4. เปิดอีก browser/tab ด้วย account อื่น -> เข้าห้องเดียวกัน
 5. ส่งข้อความ — เห็นทันทีในทั้ง 2 tab (real-time WebSocket!)
-6. ไปที่หน้า **โปรไฟล์** → อัพโหลดรูป avatar
+6. ไปที่หน้า **โปรไฟล์** -> อัพโหลดรูป avatar
 
 ## Endpoints
 
@@ -109,7 +121,7 @@ ChatApp (Solution)
 | Method | Path | Description |
 |--------|------|-------------|
 | POST | `/auth/api/auth/register` | สมัครสมาชิก |
-| POST | `/auth/api/auth/login` | login → access + refresh token |
+| POST | `/auth/api/auth/login` | login -> access + refresh token |
 | POST | `/auth/api/auth/refresh` | refresh access token (token rotation) |
 | POST | `/auth/api/auth/revoke` | revoke refresh token |
 | GET | `/auth/api/auth/me` | ดูข้อมูล user ปัจจุบัน |
@@ -128,18 +140,20 @@ ChatApp (Solution)
 ## JWT Authentication Flow
 
 1. Client ส่ง email + password ไปที่ `/login`
-2. Server ตรวจ password (BCrypt) → ออก `access_token` (JWT) + `refresh_token`
+2. Server ตรวจ password (BCrypt) -> ออก `access_token` (JWT) + `refresh_token`
 3. Client เก็บ `access_token` (15 นาที) + `refresh_token` (7 วัน) ใน LocalStorage
 4. ใส่ `Authorization: Bearer {access_token}` ทุก API call
 5. WebSocket ส่ง token ผ่าน `?access_token=xxx` (เพราะ browser ไม่อนุญาตให้ตั้ง header ใน WebSocket)
-6. Access token หมดอายุ → ใช้ refresh token ขอ token ใหม่ (token rotation: ตัวเก่า revoke, ตัวใหม่ออก)
+6. Access token หมดอายุ -> ใช้ refresh token ขอ token ใหม่ (token rotation: ตัวเก่า revoke, ตัวใหม่ออก)
 
 ## Security Notes
 
-- ✅ JWT signing key + DB password อยู่ใน environment variables
-- ✅ HTTPS บังคับ (HSTS + 301 redirect)
-- ✅ BCrypt password hashing (work factor 12)
-- ✅ Refresh token rotation (ป้องกัน token reuse attack)
-- ✅ Short-lived access token (15 นาที) ลด window ที่ token ถูกขโมยไปใช้ได้
-- ✅ SQL injection ป้องกันด้วย parameterized queries (Dapper)
-- ✅ File upload validation (size + extension)
+- JWT signing key + DB password อยู่ใน environment variables
+- HTTPS บังคับ (HSTS + 301 redirect)
+- BCrypt password hashing (work factor 12)
+- Refresh token rotation (ป้องกัน token reuse attack)
+- Short-lived access token (15 นาที) ลด window ที่ token ถูกขโมยไปใช้ได้
+- SQL injection ป้องกันด้วย parameterized queries (Dapper)
+- File upload validation (size + extension)
+- (dev) Self-signed cert — production ใช้ Let's Encrypt
+- (dev) Default DB password — production ใช้ Azure Key Vault / AWS Secrets Manager
